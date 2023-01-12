@@ -1,0 +1,394 @@
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  1
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00001 ;******************************************************************************
+                      00002 ;******************************************************************************
+                      00003 ;       MODELO PADRÃO PARA INICIALIZAÇÃO DE MICROCONTROLADORS PIC16F628A PARA
+                      00004 ;   PLATAFORMA DE DESENVOLVIMENTO MPLAB IDE V.8.36
+                      00005 ;       DESENVOLVIDO POR FERNANDO FERREIRA
+                      00006 ;       DATA: 03/10/2009
+                      00007 
+                      00008 ;       Select Register Bank 0
+                      00009 
+                      00010 BANK0   MACRO
+                      00011         ERRORLEVEL      +302            ; Re-enable bank warning
+                      00012         BCF             STATUS,RP0      ; Select Bank 0
+                      00013         ENDM
+                      00014 
+                      00015 ;-------------------------------------------------------------------
+                      00016 ;       Select Register Bank 1
+                      00017 
+                      00018 BANK1   MACRO
+                      00019         BSF             STATUS,RP0      ; Select Bank 1
+                      00020         ERRORLEVEL      -302            ; disable warning
+                      00021         ENDM
+                      00022 
+                      00023 ;-------------------------------------------------------------------
+                      00024 ;       Swap bytes in register file via W
+                      00025 
+                      00026 SWAP    MACRO   THIS,THAT
+                      00027 
+                      00028         MOVF    THIS,W          ; get this
+                      00029         XORWF   THAT,F          ; Swap using Microchip
+                      00030         XORWF   THAT,W          ; Tips'n Tricks
+                      00031         XORWF   THAT,F          ; #18
+                      00032         MOVWF   THIS
+                      00033 
+                      00034         ENDM
+                      00035 ;-------------------------------------------------------------------
+                      00036 ;       Copy bytes in register file via W
+                      00037 
+                      00038 COPY    MACRO   FROM,TO
+                      00039 
+                      00040         MOVF    FROM,W
+                      00041         MOVWF   TO
+                      00042 
+                      00043         ENDM
+                      00044         
+                      00045 ;**************************************************
+                      00046 ;       DEFINIÇÕES DO SISTEMA
+                      00047 ;****************************************************   
+                      00048         #DEFINE LIGA    PORTB,5 ;PINO12
+                      00049         #DEFINE PESO    PORTB,0 ;PINO7
+                      00050         #DEFINE DOSADOR PORTB,7 ;PINO14
+                      00051         #DEFINE VARRE   PORTB,1 ;PINO8
+                      00052         #DEFINE BUCHA   PORTB,2 ;PINO9
+                      00053         #DEFINE FECHA   PORTB,6 ;PINO13
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  2
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00054         #DEFINE CONT    PORTB,4 ;PINO11 
+                      00055         
+                      00056 ;*******************************************************************
+                      00057 ;       CPU configuration                                    
+                      00058 ;***********************************************************
+                      00059 
+Message[301]: MESSAGE: (Processor = 16F628)
+                      00060         MESSG           "Processor = 16F628"
+                      00061         PROCESSOR       16F628
+                      00062         INCLUDE         <P16F628.INC>
+                      00001         LIST
+                      00002 ; P16F628.INC  Standard Header File, Version 1.01    Microchip Technology, Inc.
+Message[301]: MESSAGE: (Processor-header file mismatch.  Verify selected processor.)
+                      00261         LIST
+2007   3F62           00063         __CONFIG        _CP_OFF & _WDT_OFF & _PWRTE_ON & _HS_OSC & _BODEN_ON & _LVP_OFF
+                      00064 
+                      00065 ;********************************
+                      00066 
+                      00067         CBLOCK  0X20
+  00000020            00068         W_TEMP
+  00000021            00069         STATUS_TEMP
+                      00070         ENDC
+                      00071 
+                      00072 ;*******************************************************
+                      00073 ;       VETOR DE RESET DO SISTEMA                          | 
+                      00074 ;*******************************************************
+                      00075         ORG             0X00                    ;Vetor de reset
+0000   2???           00076         GOTO    INICIO                  ;
+                      00077 
+                      00078 ;*******************************************************
+                      00079 ;       INTERRUPÇÕES                                       |
+                      00080 ;*******************************************************
+                      00081         ORG             0X04                    ;Vetor comum `as interrupcoes.
+0004   00A0           00082         MOVWF   W_TEMP          ; SALVA O REGISTRADOR W
+0005   0E03           00083         SWAPF   STATUS,W
+0006   00A1           00084         MOVWF   STATUS_TEMP     ; SALVA O STATUS DO SISTEMA
+                      00085 
+0007                  00086 INT_DEF:
+0007   1A8C           00087         BTFSC   PIR1,RCIF               ;Testa se ocorreu Int. Serial de recepção.
+0008   2???           00088         GOTO    INT_END                 ;Trata Recepção Serial.
+0009   188B           00089         BTFSC   INTCON,INTF             ;Testa se ocorreu Int. Externa.
+000A   2???           00090         GOTO    INT_END                 ;Trata Int. Externa.
+000B   190B           00091         BTFSC   INTCON,T0IF             ;Testa se ocorreu Int. de overflow do Timer0.
+000C   2???           00092         GOTO    INT_END                 ;Trata Int. de Timer0
+                      00093 
+000D                  00094 INT_END:        
+000D   0E21           00095         SWAPF   STATUS_TEMP,W
+000E   0083           00096         MOVWF   STATUS          ; RETORNA O STATUS DO SISTEMA
+000F   0EA0           00097         SWAPF   W_TEMP,F        ; RETORNA O REGISTRADOR F
+0010   0E20           00098         SWAPF   W_TEMP,W        ; RETORNA O REGISTRADOR W
+0011   0009           00099         RETFIE                                  ;Retorna caso ocorra uma interrupção não definida.
+                      00100         
+                      00101 ;********************************
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  3
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00102 ;*** INICIALIZACAO DO SISTEMA ***
+                      00103 ;********************************
+0012                  00104 INICIO
+0012   0064           00105         CLRWDT                                  ;Zera WDT e prescaler
+0013   0185           00106         CLRF    PORTA                   ;Zera latchs da PORTA
+0014   0186           00107         CLRF    PORTB                   ;Zera latchs da PORTB
+0015   3007           00108         MOVLW   B'00000111'             ;|Desliga comparadores
+0016   009F           00109         MOVWF   CMCON                   ;|
+                      00110         BANK1                                   ;|Seleciona banco 1     
+0017   1683               M         BSF             STATUS,RP0      ; Select Bank 1
+                          M         ERRORLEVEL      -302            ; disable warning
+0018   3000           00111         MOVLW   B'00000000'             ;|Configura os pinos das portas
+0019   0085           00112         MOVWF   TRISA                   ;|input=1
+001A   3001           00113     MOVLW   B'00000001'     ;|output=0
+001B   0086           00114     MOVWF   TRISB                       ;|
+                      00115     
+001C   3000           00116         MOVLW   B'00000000'             ;|
+001D   0081           00117         MOVWF   OPTION_REG              ;|
+                      00118     BANK0                                       ;Seleciona Banco 0
+                          M         ERRORLEVEL      +302            ; Re-enable bank warning
+001E   1283               M         BCF             STATUS,RP0      ; Select Bank 0
+001F   3000           00119         MOVLW   B'00000000'             ;|
+0020   008B           00120         MOVWF   INTCON                  ;|
+0021   138B           00121         BCF     INTCON,GIE                      ;|Mascara todas as int´s habilitadas.
+                      00122 
+                      00123 ;////////////////////////////////////////////////////////////////////////////
+                      00124 
+0022   1686           00125         BSF             LIGA                    ;|Liga led indicativo que o sistema está energizado
+                      00126 
+                      00127 ;*******************************
+                      00128 ; PROGRAMA PRINCIPAL
+0023                  00129 ROTINA:
+0023   1786           00130         BSF             DOSADOR                 ;|liga dosador 
+0024   1C06           00131         BTFSS   PESO                    ;|verifica se o peso atingiu o valor esperado
+0025   2???           00132         GOTO    ROTINA                  ;|se não, continua executando a rotina programada
+0026   1386           00133         BCF             DOSADOR                 ;|se sim, desliga dosador       
+0027   2???           00134         CALL    EMBRULHO                ;|e inicia processo de embasamento      
+0028   2???           00135         GOTO    ROTINA                  ;|ao final retorna a rotina
+                      00136         
+0029                  00137 EMBRULHO:
+                      00138 ;       call    delay_                  ;|espera um tempo de XX segundos para sentar o produtos
+0029   1486           00139         BSF             VARRE                   ;|liga o pistão para empurrar o produto para o funil
+                      00140 ;       call    delay_                  ;|espera XX segundos para o pistão avançar
+002A   1086           00141         BCF             VARRE                   ;|desliga o pistão
+                      00142 ;       call    delay_                  ;|espera XX segundos para o pistão recolher
+002B   1506           00143         BSF             BUCHA                   ;|aciona pistão para carregar a dose na embalagem
+                      00144 ;       call    delay_                  ;|espera XX segundos para o pistão avançar
+002C   1106           00145         BCF             BUCHA                   ;|desliga o pistão
+                      00146 ;       call    delay_                  ;|espera XX segundos para o pistão recolher
+002D   1706           00147         BSF             FECHA                   ;|ativa função de fechamento e avanço de embalagens
+                      00148 ;       call    delay_                  ;|espera XX segundos para a execução da ação
+002E   1306           00149         BCF             FECHA                   ;|desativa função de fechamento e avanço de embalagens
+002F   1606           00150         BSF             CONT                    ;|pulsa pino de contagem
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  4
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0030   1206           00151         BCF             CONT                    ;| 
+0031   0008           00152         RETURN                                  ;|termina processo de embrulho  
+Warning[205]: Found directive in column 1. (END)
+3F62                  00153 END
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  5
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+ADEN                              00000003
+BANK0                             
+BANK1                             
+BRGH                              00000002
+BUCHA                             PORTB,2
+C                                 00000000
+C1INV                             00000004
+C1OUT                             00000006
+C2INV                             00000005
+C2OUT                             00000007
+CCP1CON                           00000017
+CCP1IE                            00000002
+CCP1IF                            00000002
+CCP1M0                            00000000
+CCP1M1                            00000001
+CCP1M2                            00000002
+CCP1M3                            00000003
+CCP1X                             00000005
+CCP1Y                             00000004
+CCPR1H                            00000016
+CCPR1L                            00000015
+CIS                               00000003
+CM0                               00000000
+CM1                               00000001
+CM2                               00000002
+CMCON                             0000001F
+CMIE                              00000006
+CMIF                              00000006
+CONT                              PORTB,4
+COPY                              
+CREN                              00000004
+CSRC                              00000007
+DC                                00000001
+DOSADOR                           PORTB,7
+EEADR                             0000009B
+EECON1                            0000009C
+EECON2                            0000009D
+EEDATA                            0000009A
+EEIE                              00000007
+EEIF                              00000007
+EMBRULHO                          00000029
+F                                 00000001
+FECHA                             PORTB,6
+FERR                              00000002
+FSR                               00000004
+GIE                               00000007
+INDF                              00000000
+INICIO                            00000012
+INTCON                            0000000B
+INTE                              00000004
+INTEDG                            00000006
+INTF                              00000001
+INT_DEF                           00000007
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  6
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+INT_END                           0000000D
+IRP                               00000007
+LIGA                              PORTB,5
+NOT_BO                            00000000
+NOT_BOD                           00000000
+NOT_BOR                           00000000
+NOT_PD                            00000003
+NOT_POR                           00000001
+NOT_RBPU                          00000007
+NOT_T1SYNC                        00000002
+NOT_TO                            00000004
+OERR                              00000001
+OPTION_REG                        00000081
+OSCF                              00000003
+PCL                               00000002
+PCLATH                            0000000A
+PCON                              0000008E
+PEIE                              00000006
+PESO                              PORTB,0
+PIE1                              0000008C
+PIR1                              0000000C
+PORTA                             00000005
+PORTB                             00000006
+PR2                               00000092
+PS0                               00000000
+PS1                               00000001
+PS2                               00000002
+PSA                               00000003
+RBIE                              00000003
+RBIF                              00000000
+RCIE                              00000005
+RCIF                              00000005
+RCREG                             0000001A
+RCSTA                             00000018
+RD                                00000000
+ROTINA                            00000023
+RP0                               00000005
+RP1                               00000006
+RX9                               00000006
+RX9D                              00000000
+SPBRG                             00000099
+SPEN                              00000007
+SREN                              00000005
+STATUS                            00000003
+STATUS_TEMP                       00000021
+SWAP                              
+SYNC                              00000004
+T0CS                              00000005
+T0IE                              00000005
+T0IF                              00000002
+T0SE                              00000004
+T1CKPS0                           00000004
+T1CKPS1                           00000005
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  7
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+T1CON                             00000010
+T1OSCEN                           00000003
+T2CKPS0                           00000000
+T2CKPS1                           00000001
+T2CON                             00000012
+TMR0                              00000001
+TMR1CS                            00000001
+TMR1H                             0000000F
+TMR1IE                            00000000
+TMR1IF                            00000000
+TMR1L                             0000000E
+TMR1ON                            00000000
+TMR2                              00000011
+TMR2IE                            00000001
+TMR2IF                            00000001
+TMR2ON                            00000002
+TOUTPS0                           00000003
+TOUTPS1                           00000004
+TOUTPS2                           00000005
+TOUTPS3                           00000006
+TRISA                             00000085
+TRISB                             00000086
+TRMT                              00000001
+TX9                               00000006
+TX9D                              00000000
+TXEN                              00000005
+TXIE                              00000004
+TXIF                              00000004
+TXREG                             00000019
+TXSTA                             00000098
+VARRE                             PORTB,1
+VR0                               00000000
+VR1                               00000001
+VR2                               00000002
+VR3                               00000003
+VRCON                             0000009F
+VREN                              00000007
+VROE                              00000006
+VRR                               00000005
+W                                 00000000
+WR                                00000001
+WREN                              00000002
+WRERR                             00000003
+W_TEMP                            00000020
+Z                                 00000002
+_BODEN_OFF                        00003FBF
+_BODEN_ON                         00003FFF
+_CP_50                            00002BFF
+_CP_75                            000017FF
+_CP_ALL                           000003FF
+_CP_OFF                           00003FFF
+_DATA_CP_OFF                      00003FFF
+_DATA_CP_ON                       00003EFF
+MPASM  5.33                      PESADORA.ASM   10-3-2009  17:28:29         PAGE  8
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+_ER_OSC_CLKOUT                    00003FFF
+_ER_OSC_NOCLKOUT                  00003FFE
+_EXTCLK_OSC                       00003FEF
+_HS_OSC                           00003FEE
+_INTRC_OSC_CLKOUT                 00003FFD
+_INTRC_OSC_NOCLKOUT               00003FFC
+_LP_OSC                           00003FEC
+_LVP_OFF                          00003F7F
+_LVP_ON                           00003FFF
+_MCLRE_OFF                        00003FDF
+_MCLRE_ON                         00003FFF
+_PWRTE_OFF                        00003FFF
+_PWRTE_ON                         00003FF7
+_WDT_OFF                          00003FFB
+_WDT_ON                           00003FFF
+_XT_OSC                           00003FED
+__16F628A                         00000001
+__DEBUG                           1
+
+Errors   :     0
+Warnings :     1 reported,     0 suppressed
+Messages :     2 reported,     3 suppressed
+
+
